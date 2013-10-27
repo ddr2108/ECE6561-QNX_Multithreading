@@ -1,144 +1,107 @@
 // message passing example for QNX, 
 // Filename: message_passing_ex.c 
-
+#include <stdlib.h> 
 #include <stdio.h>
 #include <pthread.h>
-#include <mqueue.h>
 #include <unistd.h>
 #include <time.h>
 #include <inttypes.h>
-#include <sys/neutrino.h>
-#include <sys/syspage.h>
 
-pthread_barrier_t barrier;  // for synchronizing threads
 
-// data to be passed
+// Parameters structure
 typedef struct _parameters
 { 
-	float t_current;
-	float alpha;
-	float beta;
+	float alpha1;
+	float alpha2;
+	float beta1;
+	float beta2;
+	float beta3;
 } parameters;
 
+//Data to be shared
+parameters fastFilter;
+//Mutex for sharing
+pthread_mutex_t paramMutex;
 
-void* Thread1( void* );
-void* Thread2( void* );
+
+void* fastFilterThread(void*);
+void* slowFilterThread(void*);
 
 //  Start processes 
 int main( void )
 {
     // give threads IDs 
-   pthread_t Thread1ID;
-   pthread_t Thread2ID;
+   	pthread_t fastFilterThreadID;
+   	pthread_t slowFilterThreadID;
 
-   /* Create a barrier, each thread executes until it reaches the barrier,
-		and then it blocks until all threads have reached the barrier. This 
-		provides a way of synchronizing threads. In this case, two threads so
-		the count is 2. */
+   	//Initialize parameters
+   	fastFilter.alpha1 = -1.691;
+   	fastFilter.alpha2 = 0.7327;
+   	fastFilter.beta1 = 0.0104;
+   	fastFilter.beta2 = 0.0209;
+   	fastFilter.beta3 = 0.0104;
 
-   pthread_barrier_init( &barrier, NULL, 2);
- 
-   pthread_create(&Thread1ID, NULL, Thread1, NULL);
-   pthread_create(&Thread2ID, NULL, Thread2, NULL);
+	//Initialize mutex
+	pthread_mutex_init(&paramMutex, NULL);
+
+	//Create the threads 
+   	pthread_create(&fastFilterThreadID, NULL, fastFilterThread, NULL);
+   	pthread_create(&slowFilterThreadID, NULL, slowFilterThread, NULL);
 	
-   pthread_join( Thread1ID, NULL );
-   pthread_join( Thread2ID, NULL );
-   exit(0);
+	//Wait for threads to finish
+   	pthread_join(fastFilterThreadID, NULL);
+   	pthread_join(slowFilterThreadID, NULL);
+	exit(0);
 }
 
 
-//Thread1 will be used to send data to Thread2. 
+//Fast filter thread
+void* fastFilterThread(void* unUsed){
+	//Buffer for IO
+	char buffer[10];
 
-void * Thread1( void * unUsed)
-{
-	/* Create the message queue to the other thread. Thread 1 is set as 
-	nonblocking, so it continues running once it sends data to the queue */
-	mqd_t T1_to_T2_Queue;
-	int i, retVal;
-	parameters param1;  // structure to hold data, local to Thread 1
-	float t;
-	uint64_t cps, cycle0;  // accesses a 64 bit machine counter to determine the clock cycle
-	           
-	T1_to_T2_Queue = mq_open( "T1_to_T2_Q", O_WRONLY|O_CREAT|O_NONBLOCK, S_IRWXU, NULL );
-	if( T1_to_T2_Queue < 0 )
-	{
-		printf( "Thread1 has failed to create queue\n" );
-	}
-	else
-	{    
-		printf( "Thread1 has created queue!\n" );
-	}
-   
-	// wait here until Thread 2 has created its message queue
-	pthread_barrier_wait( &barrier );
+	//Values for filter
+	float x, x1, x2;
+	float y, y1, y2;
 
-    /* find out how many cycles per second for this machine */
-    cps = SYSPAGE_ENTRY(qtime)->cycles_per_sec;
-    printf("This system has %lld cycles/sec. \n",cps);
-        /* determine the initial cycle */
-    cycle0 = ClockCycles();
-    i = 0;
-    while( i < 50 )
-      {
-	param1.t_current = (float)(ClockCycles()-cycle0)/(float)(cps);  //time since initial cycle
-	t = param1.t_current;
-	param1.alpha = t+10;
-	param1.beta = 2*t;
-        printf("Thread 1 running, i = %d, t = %f \n", i, t);
-        retVal = mq_send( T1_to_T2_Queue, ( char * )&param1, sizeof( param1 ), 0 );
-	if( retVal < 0 )
-	{
-		printf( "sensor mq_send to Thread 2 failed!\n" );
-	}
-	i++;
-	delay( 500 );  // sleep for 500 ms
-      }
-      
-      pthread_exit(0);
-      return( NULL );
+	//File pointer
+	FILE *fpRead, *fpWrite;			
+
+	//Open file
+	fpRead = fopen("Data1.txt", "r");
+	fpWrite = fopen("Output.txt", "w");
+        	
+    while(fscanf(fpRead, "%f", &x) != EOF){
+		
+    	//Calculate new value
+    	pthread_mutex_lock(&paramMutex);
+		y = fastFilter.beta1*x + fastFilter.beta2*x1 + fastFilter.beta3*x2 - fastFilter.alpha1*y1 - fastFilter.alpha2*y2;
+    	pthread_mutex_unlock(&paramMutex);
+
+		//Ouput new value to text file
+		fprintf(fpWrite, "%f", y);
+
+		//Adjust values
+		x2 = x1;
+		x1 = x;
+		y2 = y1;
+		y1 = y;
+
+		//Sleep till next sample
+		usleep(50000);				
+    }
+    
+    //Close file streams
+    fclose(fpRead);
+    fclose(fpWrite);
+
+    //Exit thread and return  
+    pthread_exit(0);
+    return(NULL);
   
 }
 
-void * Thread2 ( void * unUsed)
-{
-	/* Create the message queue to the other thread. Thread 2 is set as 
-	blocking, so it waits until data is sent to the queue */
-	mqd_t T1_to_T2_Queue;
-	int i, retVal;
-	parameters param2;
-	float t=0;
-	float x, y;
-	           
-	T1_to_T2_Queue = mq_open( "T1_to_T2_Q", O_RDONLY|O_CREAT, S_IRWXU, NULL );
-	// could have made both O_RDWR for flexibility
+//Slow filter thread
+void* slowFilterThread(void* unUsed){
 
-	if( T1_to_T2_Queue < 0 )
-	{
-		printf( "Thread2 has failed to create queue\n" );
-	}
-	else
-	{    
-		printf( "Thread2 has created queue!\n" );
-	}
-   
-	// wait here until Thread 1 has created its message queue
-	pthread_barrier_wait( &barrier );
-        i = 0;
-	while( i < 50 )
-	{
-		retVal = mq_receive( T1_to_T2_Queue, (char*) &param2,4096,NULL );
-		if( retVal < 0 )
-		{
-			printf("Error receiving from queue\n" );
-			perror( "Thread2" );
-		}
-            
-		t = param2.t_current;
-		x = 2* param2.alpha;
-		y = 2* param2.beta;
-		printf( "Thread 2: %f %f %f %f %f\n", t, param2.alpha, param2.beta, x, y );
-		i++;
-	}
-	pthread_exit(0);
-	return( NULL );
  }
