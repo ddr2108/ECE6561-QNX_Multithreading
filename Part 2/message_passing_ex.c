@@ -10,158 +10,193 @@
 #include <sys/neutrino.h>
 #include <sys/syspage.h>
 
-pthread_barrier_t barrier;  // for synchronizing threads
-
-// data to be passed
-typedef struct _parameters{ 
+//Structures of data to be passed
+typedef struct _parametersTrajectory{ 
 	float t_current;
 	float alpha;
 	float beta;
-} parameters;
+} parametersTrajectory;
+
+typedef struct _parametersVelocity{ 
+	float t_current;
+	float alpha;
+	float beta;
+} parametersVelocity;
+
+pthread_barrier_t barrier;  // for synchronizing threads
 
 //Function definitions
-void* velocityThread(void*);
 void* trajectoryThread(void*);
+void* velocityThread(void*);
 void* sensorThread(void*);
 
 //  Start processes 
 int main(void){
    
-   // give threads IDs 
-   pthread_t velocityThreadID;
+   //G ive threads IDs 
    pthread_t trajectoryThreadID;
+   pthread_t velocityThreadID;
    pthread_t sensorThreadID;
 
-   /* Create a barrier, each thread executes until it reaches the barrier,
-		and then it blocks until all threads have reached the barrier. This 
-		provides a way of synchronizing threads. In this case, two threads so
-		the count is 2. */
-
+   //Create barrier for synchronization
    pthread_barrier_init( &barrier, NULL, 2);
  
    //Create threads
-   pthread_create(&velocityThreadID;, NULL, velocityThread, NULL);
    pthread_create(&trajectoryThreadID;, NULL, trajectoryThread, NULL);
+   pthread_create(&velocityThreadID;, NULL, velocityThread, NULL);
    pthread_create(&sensorThreadID;, NULL, sensorThread, NULL);
 
    //Finish threads
-   pthread_join(velocityThreadID, NULL );
    pthread_join(trajectoryThreadID, NULL );
+   pthread_join(velocityThreadID, NULL );
    pthread_join(sensorThreadID, NULL );
    exit(0);
 }
 
 
 
-void* velocityThread(void* unUsed){
-	/* Create the message queue to the other thread. Thread 1 is set as 
-	nonblocking, so it continues running once it sends data to the queue */
-	mqd_t T1_to_T2_Queue;
-	int i, retVal;
-	parameters param1;  // structure to hold data, local to Thread 1
-	float t;
-	uint64_t cps, cycle0;  // accesses a 64 bit machine counter to determine the clock cycle
+void* trajectoryThread(void* unUsed){
+	int retVal;						//Return value from message queue
+	mqd_t sensorToTrajectoryQueue;	//Messeging queue
+	parametersTrajectory param;		//Parameters to be passed
+	FILE *fpWrite;					//File pointer
+
+	//Open file
+	fpWrite = fopen("Trajectory.txt", "w");
 	           
-	T1_to_T2_Queue = mq_open( "T1_to_T2_Q", O_WRONLY|O_CREAT|O_NONBLOCK, S_IRWXU, NULL );
-	if( T1_to_T2_Queue < 0 )
-	{
-		printf( "Thread1 has failed to create queue\n" );
-	}
-	else
-	{    
-		printf( "Thread1 has created queue!\n" );
+	//Open messaging queue           
+	sensorToTrajectoryQueue = mq_open( "sensorToTrajectoryQ", O_WRONLY|O_CREAT|O_NONBLOCK, S_IRWXU, NULL);
+	//Error check messaging queue
+	if(sensorToTrajectoryQueue < 0){
+		printf("Trajectory Thread has Failed to Create Queue\n");
+	}else{    
+		printf("Trajectory Thread has Created Queue!\n");
 	}
    
-	// wait here until Thread 2 has created its message queue
-	pthread_barrier_wait( &barrier );
+	//Wait here until sensor thread has created its message queue
+	pthread_barrier_wait(&barrier);
 
-    /* find out how many cycles per second for this machine */
-    cps = SYSPAGE_ENTRY(qtime)->cycles_per_sec;
-    printf("This system has %lld cycles/sec. \n",cps);
-        /* determine the initial cycle */
-    cycle0 = ClockCycles();
-    i = 0;
-    while( i < 50 )
-      {
-	param1.t_current = (float)(ClockCycles()-cycle0)/(float)(cps);  //time since initial cycle
-	t = param1.t_current;
-	param1.alpha = t+10;
-	param1.beta = 2*t;
-        printf("Thread 1 running, i = %d, t = %f \n", i, t);
-        retVal = mq_send( T1_to_T2_Queue, ( char * )&param1, sizeof( param1 ), 0 );
-	if( retVal < 0 )
-	{
-		printf( "sensor mq_send to Thread 2 failed!\n" );
-	}
-	i++;
-	delay( 500 );  // sleep for 500 ms
-      }
-      
-      pthread_exit(0);
-      return( NULL );
-  
-}
-
-void * trajectoryThread(void* unUsed){
-	/* Create the message queue to the other thread. Thread 2 is set as 
-	blocking, so it waits until data is sent to the queue */
-	mqd_t T1_to_T2_Queue;
-	int i, retVal;
-	parameters param2;
-	float t=0;
-	float x, y;
-	           
-	T1_to_T2_Queue = mq_open( "T1_to_T2_Q", O_RDONLY|O_CREAT, S_IRWXU, NULL );
-	// could have made both O_RDWR for flexibility
-
-	if( T1_to_T2_Queue < 0 )
-	{
-		printf( "Thread2 has failed to create queue\n" );
-	}
-	else
-	{    
-		printf( "Thread2 has created queue!\n" );
-	}
-   
-	// wait here until Thread 1 has created its message queue
-	pthread_barrier_wait( &barrier );
-        i = 0;
-	while( i < 50 )
-	{
-		retVal = mq_receive( T1_to_T2_Queue, (char*) &param2,4096,NULL );
-		if( retVal < 0 )
-		{
+	while(1){
+		//Block until data recieved
+		retVal = mq_receive(sensorToTrajectoryQueue, (char*)&param, sizeof(param), NULL);
+		//Error on recieve
+		if(retVal< 0){
 			printf("Error receiving from queue\n" );
-			perror( "Thread2" );
+			perror("Trajectory Thread");
 		}
             
-		t = param2.t_current;
-		x = 2* param2.alpha;
-		y = 2* param2.beta;
-		printf( "Thread 2: %f %f %f %f %f\n", t, param2.alpha, param2.beta, x, y );
-		i++;
+        //Do processing 
+		param;
+
+        //Output data
+        fprintf(fpWrite, "%f %f %f %f %f\n", 1,1,1,1,1);
 	}
+
+	//Exit thread
 	pthread_exit(0);
-	return( NULL );
+	return(NULL);
+}
+
+void* velocityThread(void* unUsed){
+	int retVal;						//Return value from message queue
+	mqd_t sensorToVelocityQueue;	//Messeging queue
+	parametersVelocity param;		//Parameters to be passed
+	FILE *fpWrite;					//File pointer
+
+	//Open file
+	fpWrite = fopen("Velocity.txt", "w");
+	           
+	//Open messaging queue           
+	sensorToVelocityQueue = mq_open( "sensorToVelocityQ", O_WRONLY|O_CREAT|O_NONBLOCK, S_IRWXU, NULL);
+	//Error check messaging queue
+	if(sensorToVelocityQueue < 0){
+		printf("Velocity Thread has Failed to Create Queue\n");
+	}else{    
+		printf("Velocity Thread has Created Queue!\n");
+	}
+   
+	//Wait here until sensor thread has created its message queue
+	pthread_barrier_wait(&barrier);
+
+	while(1){
+		//Block until data recieved
+		retVal = mq_receive(sensorToVelocityQueue, (char*)&param, sizeof(param), NULL);
+		//Error on recieve
+		if(retVal< 0){
+			printf("Error receiving from queue\n" );
+			perror("Velocity Thread");
+		}
+            
+        //Do processing 
+		param;
+
+        //Output data
+        fprintf(fpWrite, "%f %f %f %f %f\n", 1,1,1,1,1);
+	}
+
+	//Exit thread
+	pthread_exit(0);
+	return(NULL);
  }
 
 
 void* sensorThread(void* unUsed){
-	int ticks = 0;
+	int retVal;
+	int ticks = 0;		//Clock
+	uint64_t cps, cycle0;
+	float timeCur;
+	parametersVelocity paramToVelocity;			//Parameters to be passed
+	parametersTrajectory paramToTrajectory; 	
+	mqd_t sensorToVelocityQueue, sensorToTrajectoryQueue;	//Message Queues
+
+	//Do some initial clock setup
+    cps = SYSPAGE_ENTRY(qtime)->cycles_per_sec;
+    cycle0 = ClockCycles();
+
+	//Open messaging queues	           
+	sensorToTrajectoryQueue = mq_open("sensorToTrajectoryQ", O_RDONLY|O_CREAT, S_IRWXU, NULL);
+	sensorToVelocityQueue = mq_open("sensorToVelocityQ", O_RDONLY|O_CREAT, S_IRWXU, NULL);
+	//Error checking on message queue creation
+	if(sensorToTrajectoryQueue < 0){
+		printf("Sensor Thread has Failed to Create Trajectory Queue\n");
+	}else{    
+		printf("Sensor Thread has Created Trajectory Queue!\n");
+	}
+	if(sensorToVelocityQueue < 0){
+		printf("Sensor Thread has Failed to Create Velocity Queue\n");
+	}else{    
+		printf("Sensor Thread has Created Velocity Queue!\n");
+	}
+
+	// wait here until sensor thread has created its message queue
+	pthread_barrier_wait(&barrier);
 
 	while (1){
+		//Clock
+		timeCur = (float)(ClockCycles()-cycle0)/(float)(cps);
+
+		//Data Processing
+		paramToVelocity;
+		paramToTrajectory;
+
 		//At 10Hz
 		if (ticks%10 == 0){
-
+			//Send data to velocity controller
+			retVal = mq_send(sensorToVelocityQueue, (char*)&paramToVelocity, sizeof(paramToVelocity), 0);
+			if(retVal < 0){
+					printf("Sensor Send to Velocity Thread Failed!\n");
+			}		
 		}
 
 		//At 100Hz
-		asd
-		
-		//Increment clock
+		//Send data to velocity controller
+		retVal = mq_send(sensorToTrajectoryQueue, (char*)&paramToTrajectory, sizeof(paramToTrajectory), 0);
+		if(retVal < 0){
+			printf( "Sensor Send to Velocity Thread Failed!\n" );
+		}	
+
+		//Clock
 		ticks++;		
-	
-		//Delay for 10ms
-		delay(10);
+		delay(10);				//Delay for 10ms
 	}
 }
