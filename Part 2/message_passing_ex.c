@@ -11,6 +11,13 @@
 #include <sys/syspage.h>
 
 //Structures of data to be passed
+typedef struct _parametersInit{ 
+	float x;
+	float y;
+	float angle;
+} parametersInit;
+
+
 typedef struct _parametersTrajectory{ 
 	float timeCur;
 	float leftVel;
@@ -18,20 +25,22 @@ typedef struct _parametersTrajectory{
 	float heading;
 	float x;
 	float y;
+	int flag;
 } parametersTrajectory;
 
 typedef struct _parametersVelocity{ 
 	float timeCur;
 	float leftVel;
 	float rightVel;
+	int flag;
 } parametersVelocity;
 
 typedef struct _parametersDesired{ 
 	float timeCur;
 	float velocity;
 	float turningRate;
+	int flag;
 } parametersDesired;
-
 
 pthread_barrier_t barrier;  // for synchronizing threads
 
@@ -42,79 +51,78 @@ void* sensorThread(void*);
 int rightWheelSensor(void*);
 int leftWheelSensor(void*);
 
-
-/*
-* rightWheelSensor
-* Gets velocity from right wheel
+/*******************************************************
+* main
+* main thread
 *
 * params:
 * none
 *
 * returns:
-* float - velocity
-*/
-float rightWheelSensor(void*){
-	return 0.5;
-}
-
-/*
-* leftWheelSensor 
-* Gets velocity from left wheel
-*
-* params:
 * none
-*
-* returns:
-* float - velocity
-*/
-float leftWheelSensor(void*){
-	return 0.5;
-}
-
-
-//  Start processes 
+*******************************************************/
 int main(void){
-   
-   //G ive threads IDs 
-   pthread_t trajectoryThreadID;
-   pthread_t velocityThreadID;
-   pthread_t sensorThreadID;
+	//Initial parameters
+	parametersInit param = {1, 1, 3.14/4};
 
-   //Create barrier for synchronization
-   pthread_barrier_init( &barrier, NULL, 2);
- 
-   //Create threads
-   pthread_create(&trajectoryThreadID;, NULL, trajectoryThread, NULL);
-   pthread_create(&velocityThreadID;, NULL, velocityThread, NULL);
-   pthread_create(&sensorThreadID;, NULL, sensorThread, NULL);
+   	//Give threads IDs 
+   	pthread_t trajectoryThreadID;
+   	pthread_t velocityThreadID;
+   	pthread_t sensorThreadID;
 
-   //Finish threads
-   pthread_join(trajectoryThreadID, NULL );
-   pthread_join(velocityThreadID, NULL );
-   pthread_join(sensorThreadID, NULL );
-   exit(0);
+	//Create barrier for synchronization
+	pthread_barrier_init( &barrier, NULL, 2);
+
+	//Create threads
+	pthread_create(&trajectoryThreadID, NULL, trajectoryThread, (void*)&param));
+	pthread_create(&velocityThreadID, NULL, velocityThread, NULL);
+	pthread_create(&sensorThreadID, NULL, sensorThread, NULL);
+
+	//Finish threads
+	pthread_join(trajectoryThreadID, NULL );
+	pthread_join(velocityThreadID, NULL );
+	pthread_join(sensorThreadID, NULL );
+	exit(0);
 }
 
-
-
-void* trajectoryThread(void* unUsed){
+/*******************************************************
+* trajectoryThread
+* Process data and send commands to LL controller
+*
+* params:
+* none
+*
+* returns:
+* none
+*******************************************************/
+void* trajectoryThread(void* inputParam){
+	//Input
+	parametersInit* initial;
 	//Final Goal
-	float xGoal = 1;
-	float yGoal = 1;
-	float angle = 3.14/2;
+	float xGoal;
+	float yGoal;
+	float angle;
 	//Control System parameters
 	float kp = 1;
 	float kalpha = 1;
 	float kphi = 1;
-	//Variables for calulations
+	//Variables for calculations
 	float rho, alpha, phi, deltaX, deltaY;
 	float vel, omega;
 
+	int flag = 1;
 	int retVal;						//Return value from message queue
 	mqd_t sensorToTrajectoryQueue, trajectoryToVelocityQueue;	//Messeging queue
 	parametersTrajectory paramIn;		//Parameters to be passed
 	parametersDesired paramOut; 
 	FILE *fpWrite;					//File pointer
+
+	//Initialize values
+	initial = (parametersInit*) inputParam;
+	xGoal = initial->x;
+	yGoal = initial->y;
+	angle = initial->angle;
+
 
 	//Open file
 	fpWrite = fopen("Trajectory.txt", "w");
@@ -122,7 +130,6 @@ void* trajectoryThread(void* unUsed){
 	//Open messaging queue           
 	sensorToTrajectoryQueue = mq_open("sensorToTrajectoryQ", O_RDONLY|O_CREAT, S_IRWXU, NULL);
 	trajectoryToVelocityQueue = mq_open("trajectoryToVelocityQ", O_WRONLY|O_CREAT|O_NONBLOCK, S_IRWXU, NULL);
-
 	//Error check messaging queue
 	if(sensorToTrajectoryQueue < 0){
 		printf("Trajectory Thread has Failed to Create Sensor Queue\n");
@@ -135,10 +142,11 @@ void* trajectoryThread(void* unUsed){
 	}else{    
 		printf("Trajectory Thread has Created Velocity Queue!\n");
 	}
+
 	//Wait here until sensor thread has created its message queue
 	pthread_barrier_wait(&barrier);
 
-	while(1){
+	while(flag){
 		//Block until data recieved
 		retVal = mq_receive(sensorToTrajectoryQueue, (char*)&paramIn, sizeof(paramIn), NULL);
 		//Error on recieve
@@ -147,19 +155,21 @@ void* trajectoryThread(void* unUsed){
 			perror("Trajectory Thread");
 		}
             
+		flag = paramIn.flag;			//get flag
+
         //Do processing 
         deltaX = xGoal - paramIn.x;
-        deltaY = yGoal-paramIn.y;
+        deltaY = yGoal - paramIn.y;
 		rho = sqrt(pow(deltaX),2) + pow((deltaY),2));
-		alpha = -paramIn.heading+atan(deltaX/deltaY);
-		phi = -paramIn.heading + angle;
+		alpha = -1*paramIn.heading + atan(deltaX/deltaY);
+		phi = -1*paramIn.heading + angle;
 		if (phi<-3.14/2){
 			while (phi<-3.14/2){
-				phi+=6.28;
+				phi+=3.14;
 			}
 		}else if (phi>3.14/2){
 			while (phi>3.14/2){
-				phi-=6.28;
+				phi-=3.14;
 			}
 		}
 
@@ -188,25 +198,35 @@ void* trajectoryThread(void* unUsed){
 	return(NULL);
 }
 
+/*******************************************************
+* velocityThread
+* Process data and send commands to motor
+*
+* params:
+* none
+*
+* returns:
+* none
+*******************************************************/
 void* velocityThread(void* unUsed){
 	//current targets
 	float leftVel = 0;
 	float rightVel = 0;
 	float heading = 0;
-
 	//Controller parameters
 	float kp = 1;
 	float ki = 1;
-
 	float u, u1, e, e1;
 	float leftCMD, rightCMD;
 
+	int flag = 1;
 	int retVal;						//Return value from message queue
 	mqd_t sensorToVelocityQueue, trajectoryToVelocityQueue;	//Messeging queue
 	parametersVelocity paramInSensor;		//Parameters to be passed
 	parametersDesired paramInControl; 
 	FILE *fpWrite;					//File pointer
 
+	//Initialize control system parameters
 	u = u1 = e = e1 = 0;
 
 	//Open file
@@ -215,7 +235,6 @@ void* velocityThread(void* unUsed){
 	//Open messaging queue           
 	sensorToVelocityQueue = mq_open("sensorToVelocityQ", O_RDONLY|O_CREAT, S_IRWXU, NULL);
 	trajectoryToVelocityQueue = mq_open("trajectoryToVelocityQ", O_RDONLY|O_CREAT|O_NONBLOCK, S_IRWXU, NULL);
-
 	//Error check messaging queue
 	if(sensorToVelocityQueue < 0){
 		printf("Velocity Thread has Failed to Create Sensor Queue\n");
@@ -227,10 +246,11 @@ void* velocityThread(void* unUsed){
 	}else{    
 		printf("Velocity Thread has Created Trajectory Queue!\n");
 	}
+
 	//Wait here until sensor thread has created its message queue
 	pthread_barrier_wait(&barrier);
 
-	while(1){
+	while(flag){
 		//Block until data recieved
 		retVal = mq_receive(sensorToVelocityQueue, (char*)&paramInSensor, sizeof(paramInSensor), NULL);
 		//Error on recieve
@@ -239,13 +259,15 @@ void* velocityThread(void* unUsed){
 			perror("Velocity Thread");
 		}
 
-		//See if any data to be recieved
-		retVal = mq_receive(sensorToVelocityQueue, (char*)&paramInControl, sizeof(paramInControl), NULL);
+		//See if any data to be recieved from Trajectory
+		retVal = mq_receive(trajectoryToVelocityQueue, (char*)&paramInControl, sizeof(paramInControl), NULL);
 		if(retVal >= 0){
 			leftVel = paramInControl.velocity;
 			rightVel = paramInControl.velocity;
 			heading = paramInControl.turningRate;
 		}
+
+		flag = paramInSensor.flag;			//get flag
 
         //Do processing
         e =  paramInSensor.leftVel - paramInSensor.rightVel;
@@ -259,24 +281,36 @@ void* velocityThread(void* unUsed){
         fprintf(fpWrite, "%f %f %f %f %f\n", paramInSensor.timeCur, (velLeft+velRight)/2, heading, rightCMD, leftCMD);
 	}
 
-	fclose(fpWrite);
+	fclose(fpWrite);		//close file
 
 	//Exit thread
 	pthread_exit(0);
 	return(NULL);
  }
 
-
+/*******************************************************
+* sensorThread
+* Gets data from sensor
+*
+* params:
+* none
+*
+* returns:
+* none
+*******************************************************/
 void* sensorThread(void* unUsed){
 	float leftVel, rightVel;
 	float distance, heading, prevTime;
+	int flag = 1;	
 	int retVal;
+
 	int ticks = 0;		//Clock
 	uint64_t cps, cycle0;
 	float timeCur;
+
 	parametersVelocity paramToVelocity;			//Parameters to be passed
 	parametersTrajectory paramToTrajectory; 	
-	mqd_t sensorToVelocityQueue, sensorToTrajectoryQueue;	//Message Queues
+	mqd_t sensorToTrajectoryQueue, sensorToVelocityQueue;	//Message Queues
 
 	//Do some initial clock setup
     cps = SYSPAGE_ENTRY(qtime)->cycles_per_sec;
@@ -305,7 +339,7 @@ void* sensorThread(void* unUsed){
 	// wait here until sensor thread has created its message queue
 	pthread_barrier_wait(&barrier);
 
-	while (1){
+	while (flag){
 		//Clock
 		timeCur = (float)(ClockCycles()-cycle0)/(float)(cps);
 
@@ -317,6 +351,7 @@ void* sensorThread(void* unUsed){
 		parametersVelocity.timeCur = timeCur;			
 		parametersVelocity.leftVel = leftVel; 					
 		parametersVelocity.rightVel = rightVel;
+		parametersVelocity.flag = 1;
 
 		//calculate values for trajectory
 		heading = 3.14/4;			//Calculations would happen if there was real data
@@ -326,9 +361,25 @@ void* sensorThread(void* unUsed){
 		paramToTrajectory.timeCur = timeCur;
 		parametersTrajectory leftVel = leftVel;
 		paramToTrajectory.rightVel = rightVel;
-	 	paramToTrajectory.heading = prevHeading;
+	 	paramToTrajectory.heading = heading;
 	 	paramToTrajectory.x = distance * cos(heading);
 		paramToTrajectory.y = distance * sin(heading);
+		paramToTrajectory.flag = 1;
+		
+		//At 10Hz
+		if (ticks%10 == 0){
+			//Times up - 10s test
+			if (timeCur>10){
+				paramToTrajectory.flag = 0;
+				parametersVelocity.flag = 0;
+				flag = 0;
+			}
+			//Send data to trajectory controller
+			retVal = mq_send(sensorToTrajectoryQueue, (char*)&paramToTrajectory, sizeof(paramToTrajectory), 0);
+			if(retVal < 0){
+				printf("Sensor Send to Velocity Thread Failed!\n");
+			}
+		}
 
 		//At 100Hz
 		//Send data to velocity controller
@@ -337,18 +388,37 @@ void* sensorThread(void* unUsed){
 				printf("Sensor Send to Velocity Thread Failed!\n");		
 		}
 
-		//At 10Hz
-		if (ticks%10 == 0){
-			//Send data to trajectory controller
-			retVal = mq_send(sensorToTrajectoryQueue, (char*)&paramToTrajectory, sizeof(paramToTrajectory), 0);
-			if(retVal < 0){
-				printf("Sensor Send to Velocity Thread Failed!\n");
-			}
-		}	
-
 		//Clock
 		prevTime = timeCur;
 		ticks++;		
 		delay(10);				//Delay for 10ms
 	}
+}
+
+/*******************************************************
+* rightWheelSensor
+* Gets velocity from right wheel
+*
+* params:
+* none
+*
+* returns:
+* float - velocity
+*******************************************************/
+float rightWheelSensor(void*){
+	return 0.5;				//return 0.5m/s as per specs
+}
+
+/*
+* leftWheelSensor 
+* Gets velocity from left wheel
+*
+* params:
+* none
+*
+* returns:
+* float - velocity
+*/
+float leftWheelSensor(void*){
+	return 0.5;				//return 0.5m/s as per specs
 }
