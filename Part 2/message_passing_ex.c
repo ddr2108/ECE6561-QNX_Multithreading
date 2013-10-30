@@ -5,9 +5,13 @@
 #include <pthread.h>
 #include <mqueue.h>
 #include <unistd.h>
+<<<<<<< HEAD
 #include <errno.h>
 #include <time.h>
 #include <math.h>
+=======
+#include <time.h>
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
 #include <inttypes.h>
 #include <sys/neutrino.h>
 #include <sys/syspage.h>
@@ -50,8 +54,13 @@ pthread_barrier_t barrier;  // for synchronizing threads
 void* trajectoryThread(void*);
 void* velocityThread(void*);
 void* sensorThread(void*);
+<<<<<<< HEAD
 float rightWheelSensor();
 float leftWheelSensor();
+=======
+int rightWheelSensor(void*);
+int leftWheelSensor(void*);
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
 
 /*******************************************************
 * main
@@ -73,10 +82,17 @@ int main(void){
    	pthread_t sensorThreadID;
 
 	//Create barrier for synchronization
+<<<<<<< HEAD
 	pthread_barrier_init( &barrier, NULL, 3);
 
 	//Create threads
 	pthread_create(&trajectoryThreadID, NULL, trajectoryThread, (void*)&param);
+=======
+	pthread_barrier_init( &barrier, NULL, 2);
+
+	//Create threads
+	pthread_create(&trajectoryThreadID, NULL, trajectoryThread, (void*)&param));
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
 	pthread_create(&velocityThreadID, NULL, velocityThread, NULL);
 	pthread_create(&sensorThreadID, NULL, sensorThread, NULL);
 
@@ -84,7 +100,11 @@ int main(void){
 	pthread_join(trajectoryThreadID, NULL );
 	pthread_join(velocityThreadID, NULL );
 	pthread_join(sensorThreadID, NULL );
+<<<<<<< HEAD
 	//exit(0);
+=======
+	exit(0);
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
 }
 
 /*******************************************************
@@ -150,19 +170,31 @@ void* trajectoryThread(void* inputParam){
 
 	while(flag){
 		//Block until data recieved
+<<<<<<< HEAD
 		retVal = mq_receive(sensorToTrajectoryQueue, (char*)&paramIn, 4096, NULL);
+=======
+		retVal = mq_receive(sensorToTrajectoryQueue, (char*)&paramIn, sizeof(paramIn), NULL);
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
 		//Error on recieve
 		if(retVal< 0){
 			printf("Error receiving from queue\n" );
 			perror("Trajectory Thread");
 		}
+<<<<<<< HEAD
 	              
+=======
+            
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
 		flag = paramIn.flag;			//get flag
 
         //Do processing 
         deltaX = xGoal - paramIn.x;
         deltaY = yGoal - paramIn.y;
+<<<<<<< HEAD
 		rho = sqrt(pow(deltaX ,2) + pow(deltaY,2));
+=======
+		rho = sqrt(pow(deltaX),2) + pow((deltaY),2));
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
 		alpha = -1*paramIn.heading + atan(deltaX/deltaY);
 		phi = -1*paramIn.heading + angle;
 		if (phi<-3.14/2){
@@ -188,7 +220,11 @@ void* trajectoryThread(void* inputParam){
 		if(retVal < 0){
 				printf("Trajectory Send to Sensor Thread Failed!\n");		
 		}
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
         //Output data
         fprintf(fpWrite, "%f %f %f\n", paramOut.timeCur,paramOut.velocity,paramOut.turningRate);
 	}
@@ -235,8 +271,13 @@ void* velocityThread(void* unUsed){
 	fpWrite = fopen("Velocity.txt", "w");
 	           
 	//Open messaging queue           
+<<<<<<< HEAD
 	trajectoryToVelocityQueue = mq_open("trajectoryToVelocityQ", O_RDONLY|O_CREAT|O_NONBLOCK, S_IRWXU, NULL);
 	sensorToVelocityQueue = mq_open("sensorToVelocityQ", O_RDONLY|O_CREAT, S_IRWXU, NULL);
+=======
+	sensorToVelocityQueue = mq_open("sensorToVelocityQ", O_RDONLY|O_CREAT, S_IRWXU, NULL);
+	trajectoryToVelocityQueue = mq_open("trajectoryToVelocityQ", O_RDONLY|O_CREAT|O_NONBLOCK, S_IRWXU, NULL);
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
 	//Error check messaging queue
 	if(sensorToVelocityQueue < 0){
 		printf("Velocity Thread has Failed to Create Sensor Queue\n");
@@ -251,6 +292,7 @@ void* velocityThread(void* unUsed){
 
 	//Wait here until sensor thread has created its message queue
 	pthread_barrier_wait(&barrier);
+<<<<<<< HEAD
 
 	while(flag){
 		//Block until data recieved
@@ -262,24 +304,50 @@ void* velocityThread(void* unUsed){
 
 		//See if any data to be recieved from Trajectory
 		retVal = mq_receive(trajectoryToVelocityQueue, (char*)&paramInControl, 4096, NULL);
+=======
+
+	while(flag){
+		//Block until data recieved
+		retVal = mq_receive(sensorToVelocityQueue, (char*)&paramInSensor, sizeof(paramInSensor), NULL);
+		//Error on recieve
+		if(retVal< 0){
+			printf("Error receiving from queue\n" );
+			perror("Velocity Thread");
+		}
+
+		//See if any data to be recieved from Trajectory
+		retVal = mq_receive(trajectoryToVelocityQueue, (char*)&paramInControl, sizeof(paramInControl), NULL);
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
 		if(retVal >= 0){
 			leftVel = paramInControl.velocity;
 			rightVel = paramInControl.velocity;
 			heading = paramInControl.turningRate;
 		}
+<<<<<<< HEAD
 
+=======
+
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
 		flag = paramInSensor.flag;			//get flag
 
         //Do processing
         e =  paramInSensor.leftVel - paramInSensor.rightVel;
+<<<<<<< HEAD
         u = u1 + ki*(e + e1);
+=======
+        u = u1 + ki(e + e1);
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
         e1 = e;
         u1 = u;
 		leftCMD = (leftVel-paramInSensor.leftVel-u)*kp;
 		rightCMD = (rightVel-paramInSensor.rightVel-u)*kp;
 
         //Output data
+<<<<<<< HEAD
         fprintf(fpWrite, "%f %f %f %f %f\n", paramInSensor.timeCur, (leftVel+rightVel)/2, heading, rightCMD, leftCMD);
+=======
+        fprintf(fpWrite, "%f %f %f %f %f\n", paramInSensor.timeCur, (velLeft+velRight)/2, heading, rightCMD, leftCMD);
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
 	}
 
 	fclose(fpWrite);		//close file
@@ -349,10 +417,17 @@ void* sensorThread(void* unUsed){
 		rightVel = leftWheelSensor();
 
 		//Set the parameters for velocity
+<<<<<<< HEAD
 		paramToVelocity.timeCur = timeCur;			
 		paramToVelocity.leftVel = leftVel; 					
 		paramToVelocity.rightVel = rightVel;
 		paramToVelocity.flag = 1;
+=======
+		parametersVelocity.timeCur = timeCur;			
+		parametersVelocity.leftVel = leftVel; 					
+		parametersVelocity.rightVel = rightVel;
+		parametersVelocity.flag = 1;
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
 
 		//calculate values for trajectory
 		heading = 3.14/4;			//Calculations would happen if there was real data
@@ -360,7 +435,11 @@ void* sensorThread(void* unUsed){
 
 		//Set the parameters for trajectory
 		paramToTrajectory.timeCur = timeCur;
+<<<<<<< HEAD
 		paramToTrajectory.leftVel = leftVel;
+=======
+		parametersTrajectory leftVel = leftVel;
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
 		paramToTrajectory.rightVel = rightVel;
 	 	paramToTrajectory.heading = heading;
 	 	paramToTrajectory.x = distance * cos(heading);
@@ -372,25 +451,42 @@ void* sensorThread(void* unUsed){
 			//Times up - 10s test
 			if (timeCur>10){
 				paramToTrajectory.flag = 0;
+<<<<<<< HEAD
 				paramToVelocity.flag = 0;
+=======
+				parametersVelocity.flag = 0;
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
 				flag = 0;
 			}
 			//Send data to trajectory controller
 			retVal = mq_send(sensorToTrajectoryQueue, (char*)&paramToTrajectory, sizeof(paramToTrajectory), 0);
 			if(retVal < 0){
+<<<<<<< HEAD
 				printf("Sensor Send to Trajectory Thread Failed!\n");
 			}
 		}
 
 
+=======
+				printf("Sensor Send to Velocity Thread Failed!\n");
+			}
+		}
+
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
 		//At 100Hz
 		//Send data to velocity controller
 		retVal = mq_send(sensorToVelocityQueue, (char*)&paramToVelocity, sizeof(paramToVelocity), 0);
 		if(retVal < 0){
+<<<<<<< HEAD
 				perror("Sensor");	
 				printf("Sensor Send to Velocity Thread Failed!\n");
 		}
 		
+=======
+				printf("Sensor Send to Velocity Thread Failed!\n");		
+		}
+
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
 		//Clock
 		prevTime = timeCur;
 		ticks++;		
@@ -408,11 +504,19 @@ void* sensorThread(void* unUsed){
 * returns:
 * float - velocity
 *******************************************************/
+<<<<<<< HEAD
 float rightWheelSensor(){
 	return 0.5;				//return 0.5m/s as per specs
 }
 
 /*******************************************************
+=======
+float rightWheelSensor(void*){
+	return 0.5;				//return 0.5m/s as per specs
+}
+
+/*
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
 * leftWheelSensor 
 * Gets velocity from left wheel
 *
@@ -421,7 +525,12 @@ float rightWheelSensor(){
 *
 * returns:
 * float - velocity
+<<<<<<< HEAD
 *******************************************************/
 float leftWheelSensor(){
+=======
+*/
+float leftWheelSensor(void*){
+>>>>>>> b655c9d7324c121d029c38e3c0d19131539e16ea
 	return 0.5;				//return 0.5m/s as per specs
 }
