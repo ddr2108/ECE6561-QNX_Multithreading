@@ -121,9 +121,9 @@ void* trajectoryThread(void* inputParam){
 
 	//Initialize values
 	initial = (parametersInit*) inputParam;
-	xGoal = initial->x;
-	yGoal = initial->y;
-	angle = initial->angle;
+	xGoal =1;
+	yGoal =1 ;
+	angle =3.14/2;
 
 
 	//Open file
@@ -151,10 +151,13 @@ void* trajectoryThread(void* inputParam){
 	while(flag){
 		//Block until data recieved
 		retVal = mq_receive(sensorToTrajectoryQueue, (char*)&paramIn, 4096, NULL);
+
 		//Error on recieve
 		if(retVal< 0){
 			printf("Error receiving from queue\n" );
 			perror("Trajectory Thread");
+		}else{
+			fprintf(stderr, "Trajectory Recieve From Sensor %f\n", paramIn.timeCur);
 		}
 	              
 		flag = paramIn.flag;			//get flag
@@ -173,10 +176,10 @@ void* trajectoryThread(void* inputParam){
 			while (phi>3.14/2){
 				phi-=3.14;
 			}
-		}
+		}	
 
 		//Find output values
-		omega = kalpha*alpha + kphi*phi;
+		 omega = kalpha*alpha + kphi*phi;
 		vel = kp*rho;
 		//Set output
 		paramOut.timeCur = paramIn.timeCur;
@@ -220,6 +223,9 @@ void* velocityThread(void* unUsed){
 	float ki = 1;
 	float u, u1, e, e1;
 	float leftCMD, rightCMD;
+	//Wheel parameters
+	int R = 1;			//wheel radius
+	int L = 1; 			//wheel base length
 
 	int flag = 1;
 	int retVal;						//Return value from message queue
@@ -255,17 +261,22 @@ void* velocityThread(void* unUsed){
 	while(flag){
 		//Block until data recieved
 		retVal = mq_receive(sensorToVelocityQueue, (char*)&paramInSensor, 4096, NULL);
+
 		//Error on recieve
 		if(retVal< 0){
 			printf("Error receiving from queue\n" );
+		}else{
+			fprintf(stderr, "Velocity Recieve From Sensor %f\n", paramInSensor.timeCur);
 		}
+
 
 		//See if any data to be recieved from Trajectory
 		retVal = mq_receive(trajectoryToVelocityQueue, (char*)&paramInControl, 4096, NULL);
 		if(retVal >= 0){
-			leftVel = paramInControl.velocity;
-			rightVel = paramInControl.velocity;
+			leftVel = paramInControl.velocity/R - paramInControl.turningRate*L/(2*R);
+			rightVel = paramInControl.velocity/R + paramInControl.turningRate*L/(2*R);
 			heading = paramInControl.turningRate;
+			fprintf(stderr, "Velocity Recieve From Trajectory %f\n", paramInControl.timeCur);
 		}
 
 		flag = paramInSensor.flag;			//get flag
@@ -276,10 +287,10 @@ void* velocityThread(void* unUsed){
         e1 = e;
         u1 = u;
 		leftCMD = (leftVel-paramInSensor.leftVel-u)*kp;
-		rightCMD = (rightVel-paramInSensor.rightVel-u)*kp;
+		rightCMD = (rightVel-paramInSensor.rightVel+u)*kp;
 
         //Output data
-        fprintf(fpWrite, "%f %f %f %f %f\n", paramInSensor.timeCur, (leftVel+rightVel)/2, heading, rightCMD, leftCMD);
+        fprintf(fpWrite, "%f %f %f %f %f  %f\n", paramInSensor.timeCur, leftVel, rightVel, heading, rightCMD, leftCMD);
 	}
 
 	fclose(fpWrite);		//close file
@@ -339,7 +350,10 @@ void* sensorThread(void* unUsed){
 
 	// wait here until sensor thread has created its message queue
 	pthread_barrier_wait(&barrier);
-
+	
+	timeCur = (float)(ClockCycles()-cycle0)/(float)(cps);
+	prevTime = timeCur;
+	
 	while (flag){
 		//Clock
 		timeCur = (float)(ClockCycles()-cycle0)/(float)(cps);
@@ -356,8 +370,8 @@ void* sensorThread(void* unUsed){
 
 		//calculate values for trajectory
 		heading = 3.14/4;			//Calculations would happen if there was real data
-		distance += (rightVel+leftVel)/2*(timeCur - prevTime);
-
+		distance +=(rightVel+leftVel)/2*(timeCur-prevTime);
+	
 		//Set the parameters for trajectory
 		paramToTrajectory.timeCur = timeCur;
 		paramToTrajectory.leftVel = leftVel;
@@ -393,8 +407,8 @@ void* sensorThread(void* unUsed){
 		
 		//Clock
 		prevTime = timeCur;
-		ticks++;		
-		delay(10);				//Delay for 10ms
+		ticks++;	
+		usleep(10000);				//Delay for 10ms
 	}
 }
 
@@ -412,7 +426,8 @@ float rightWheelSensor(){
 	return 0.5;				//return 0.5m/s as per specs
 }
 
-/*******************************************************
+/*
+******************************************************
 * leftWheelSensor 
 * Gets velocity from left wheel
 *
@@ -421,7 +436,8 @@ float rightWheelSensor(){
 *
 * returns:
 * float - velocity
-*******************************************************/
+*****************************************************
+**/
 float leftWheelSensor(){
 	return 0.5;				//return 0.5m/s as per specs
 }
